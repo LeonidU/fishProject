@@ -66,6 +66,7 @@ parseFile <- function (FileName) {
 	resTable       <- getTables(FileName, FileProperties )	
 	return(resTable)
 }
+
 #!!IMPORTANT!!
 #Here is csv-files directory. You must change it, when you move this project to another directory
 StartDir <- "/home/leo/fish/data"
@@ -80,5 +81,35 @@ geneTable<-lapply(tables, function(x) {
 	return(as.data.frame(x$genes))
 })
 #Collect the summary table from list of tables
-unitedTable$genes <- reduce(geneTable, cbind)
+unitedTable <- t(unique(t(reduce(geneTable, cbind))))
+dTable<-matrix(as.numeric(unlist(unitedTable)),nrow=nrow(unitedTable))
+cols<-colnames(unitedTable)
+cols[duplicated(cols)] <- paste(cols[duplicated(cols)], "_2", sep="") 
+rownames(dTable)<-rownames(unitedTable)
+colnames(dTable)<-cols
+library(preprocessCore)
+#Here we are normalize
+ddTable<-normalize.quantiles(dTable)
+colnames(ddTable)<-colnames(dTable)
+rownames(ddTable)<-rownames(dTable)
+bb<-ddTable
+batch <- unique(unlist(lapply(colnames(ddTable), function(x) {
+return(paste(unlist(strsplit(x, "[.]"))[1], unlist(strsplit(x, "[.]"))[2], sep = "."))
+})))
+logs_filtr <-lapply(batch, function(x) {
+return(as.vector(log(ddTable[,grep(x,colnames(ddTable))])))
+})
+ddTable <- bb
+names(logs_filtr) <- batch
+png("boxplots_quantile_norm.png", height=300, width=6000)
+boxplot(logs_filtr)
+dev.off()
 
+library(Seurat)
+y2 <-log(dTable[2:47,])
+zebrafish <- new("seurat", raw.data = y2)
+zebrafish <- Setup(zebrafish, project="Zebrafish", min.genes=43, names.delim="[.]",  names.field=2, is.expr=-1.0)
+zebrafish <- MeanVarPlot(zebrafish, fxn.x = expMean, fxn.y = logVarDivMean, x.low.cutoff = -10.0, x.high.cutoff = 25.0, y.cutoff = -3.0, do.contour = F, do.plot=T)
+zebrafish <- PCA(zebrafish)
+zebrafish <- JackStraw(zebrafish, num.replicate = 250, do.print = FALSE)
+zebrafish <- RunTSNE(zebrafish, dims.use = 1:8, add.iter=2500)
